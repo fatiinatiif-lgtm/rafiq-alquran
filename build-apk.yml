@@ -1,0 +1,49 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Find project
+        id: p
+        run: |
+          zip=$(ls *.zip 2>/dev/null | head -n1 || true)
+          if [ -n "$zip" ]; then unzip -q -o "$zip" -d _unzipped; fi
+          dir=$(dirname "$(find . -name pubspec.yaml | head -n1)")
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          # ملف المصحف: لو رفعتيه في الجذر أو في أي مكان باسم quran-uthmani.txt ينسخ لمكانه الصحيح
+          q=$(find . -name quran-uthmani.txt -not -path "$dir/assets/*" | head -n1)
+          if [ -n "$q" ]; then mkdir -p "$dir/assets/quran" && cp "$q" "$dir/assets/quran/quran-uthmani.txt"; fi
+
+      - name: Build release APK
+        working-directory: ${{ steps.p.outputs.dir }}
+        run: |
+          flutter create --platforms=android --org com.rafiq --project-name rafiq_alquran .
+          flutter pub get
+          flutter build apk --release
+
+      - name: Publish APK as a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: رفيق القرآن - نسخة ${{ github.run_number }}
+          files: ${{ steps.p.outputs.dir }}/build/app/outputs/flutter-apk/app-release.apk
